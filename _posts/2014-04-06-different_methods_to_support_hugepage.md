@@ -12,7 +12,7 @@ category:	大内存页，内存管理
 
 -  Reservation
  
-&emsp;在基于reservation的大页分配中，当缺页时，首先先"referencing an address in a superpage"，但是这个大页其实并没有真正的被分配，即相当于先占了个坑。当属于这个大页的所有base page都（或者达到了一个 比例)fault in时，这些base page才真正的被promote成一个大页。这种方法在Alan Cox的那篇OSDI‘02用到过。显然，相对于Allocation日的方式，这种方式的优点是既可以使用大页，又可以减小没有完全使用大页时进程的memory footprint。当然，由于不是一次性载入，产生了更多的page fault，这会对速度有一定影响。
+&emsp;在基于reservation的大页分配中，当缺页时，首先先"referencing an address in a superpage"，但是这个大页其实并没有真正的被分配，即相当于先占了个坑。当属于这个大页的所有base page都（或者达到了一个 比例)fault in时，这些base page才真正的被promote成一个大页。这种方法在Alan Cox的那篇OSDI‘02用到过。显然，相对于Allocation的方式，这种方式的优点是既可以使用大页，又可以减小没有完全使用大页时进程的memory footprint。当然，由于不是一次性载入，产生了更多的page fault，这会对速度有一定影响。
 
 - Relocation
 
