@@ -1,9 +1,9 @@
 ---
 layout: post
-title:	Metris源码分析
+title:	Metis源码分析
 category:	MapReduce, Distributed System
 ---
-## Metris源码分析
+## Metis源码分析
 &emsp;前些天花了些时间把MIT的分布式课程6.824做完了， git里显示这门课的助教叫Yandong Mao，看样子是个中国人。于是到了MIT PDOS的主页上查了查，找到了这个人的github。没想到在他的github上发现了一个更有趣的东西：MapReduce的C++实现。而且还有一篇文章Optimizing MapReduce for Multicore Architectures.讲他在这里面主要做的优化，于是把文章下载下来读了一遍，准备再开始把这个开源实现的代码读一下。
 
 &emsp;由于源码不好找一个明显的入口，于是便想采用case-study的方式，从里面的wc例程开始追踪，一步步了解MapReduce的运行机制。
