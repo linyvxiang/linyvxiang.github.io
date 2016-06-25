@@ -1,0 +1,31 @@
+---
+layout: post
+title: Raft log compaction及成员变更
+category:	技术
+---
+
+# Raft log compaction及成员变更
+
+前两天看到鹅厂开源的Paxos库，想到关于Raft的log compaction以及成员变更问题自己已经拖了很久没去仔细想想，刚好趁周末的时间，仔细的捋一捋。
+
+Raft的基本实现不用细说，很简单，基本上把原理想清楚就可以写出来，这也是当初设计这个算法的初衷，相比Paxos来讲，十分清晰简单易于理解（不过其实说到底其实Raft也是Paxos，这个问题不在这次的思考范围之内）。
+
+随着运行时间的推移，Raft中积攒的log越来越多，势必要对部分已经apply(commit)的log进行清理删除，以减小不必要的磁盘空间占用。
+
+第一个问题是，已经apply的log就都可以删除吗？当然，对于基于Raft中的log来工作的状态机来说，已经apply就意味着状态机已经成功发生转移，这条log再也不会用到（其实不然，后面再说），看起来很简单，反正Raft也是为了实现RSM嘛，既然RSM已经用不到一些log了，当然可以删。可是Raft对log的有序提交（这是Raft相对于Paxos来讲的一个很大不同）导致了一个问题：在对follower进行AppendEntry时，需要检查本机上最后一条log的index以及term。这样，如果最后一条log已经apply，然后被gc删除，那么再进行AppendEntry时，便无法进行相应的检查以确定是不是要接受或者是拒绝此次AppendEntry。另一个场景，删除最后一条log后，如果这个node变为leader，而其它follower中恰好有一个的log比较落后，这时便无法追log。
+
+这样看来，即使是apply的log也不可以一味贪图省磁盘空间从而随便删，那么究竟可以删多少呢？可以考察所有node都成功apply的最大log index，将最大log index - 1以及之前的删除是安全的。这样，在检查本机上最后一条log的index以及term时，最坏情况下，会检查到成功apply的最大log index，而这条log是已经apply过的，当然也肯定是commit过的，肯定不会再往前检查，leader和follower上关于这条log肯定是一致的（否则就是Raft的实现出了bug）。在发生leader change的场景中，也不会出现需要追比最大apply log index更靠前的log的情况，因为这是使用的是所有node都成功apply的index。之所以保留所有node都apply的最大index的log是考虑到log的连续递增，在AppendEntry下一条log时，会需要对前一条log检查，而这条log可能会是最大index的log。
+
+到这里看来，log compaction的思路已经很明确了：在后台定期的去清理所有node都apply的最大index log之前所有log即可，这些log对于Raft来说永远不会再用到，对于RSM来说也永远不会再用到。
+
+再来看下一个问题：成员变更。
+
+如果由于一些维护的需要，比如磁盘故障等，这时便要把Raft中的数据复制一份。最暴力的方法便是（在我现在的认识中，这可能也是最有效的），先停掉现有的一个node，将其整个Raft的数据复制一份到目的位置，然后在目的机器上重新启动该node。
+
+如果是机器下线呢？这时便需要进行Raft的成员变更。具体的变更方法在Raft作者的博士论文中已有提到，不是这次思考的重点，不去详细叙述。不管是用一次只变更一个node的方法，还是一次变更了多个node的方法，先假设Raft的log库本身已经成功的进行了成员变更，复制了该复制的log，那么RSM怎么办？注意到这里，复制了一份Raft的log并不意味着通过这份log可以成功的还原出一个完整的RSM来：因为这份Raft的log可能是已经经过前面log compaction过的，相当于已经删除了绝大部分已经apply到RSM中log的一份log。通过这些缺少前半截的log，显然无法还原一个RSM。
+
+所以，如果要想“Raft made alive”，除为进行Raft成员变更外，还需要进行"RSM的成员变更"。显然，RSM的成员变更和Raft的成员变更不能用同一个方法：RSM是上层应用去确定的，可能是一个持久在磁盘中的数据库，也可能是一个内存结构。整个的成员变更过程中，应该先将RSM进行snapshot，复制到目的位置，然后再考虑Raft的成员变更。在RSM进行snapshot到完整的复制完成这段时间内，有可能Raft库中已经到来并commit了新的log。。。所以我认为，当数据量很大时，暴力的复制可能是最有效的方法。
+
+不过，如何去做RSM的snapshot呢？这个应该不能一概而论，毕竟不同的RSM特性是不同的。这也是下下一步需要思考的地方。
+
+看来BFS的HA路还很长啊～～～
